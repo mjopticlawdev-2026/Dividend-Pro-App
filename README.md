@@ -90,3 +90,4 @@ Contributions welcome! Please open an issue or submit a pull request.
 ## ⚠️ Disclaimer
 
 This tool is for educational and informational purposes only. Past performance does not guarantee future results. Always consult a financial advisor before making investment decisions.
+# Force redeploy
