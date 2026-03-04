@@ -16,23 +16,41 @@ st.set_page_config(
 # Custom CSS for dark, technical theme
 st.markdown("""
 <style>
-    /* Main background */
-    .stApp {
-        background: linear-gradient(135deg, #0a0e27 0%, #1a1d35 100%);
+    /* Main background - force override */
+    .stApp, [data-testid="stAppViewContainer"], [data-testid="stApp"] {
+        background: linear-gradient(135deg, #0a0e27 0%, #1a1d35 100%) !important;
     }
     
-    /* Sidebar styling */
-    section[data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #0f1419 0%, #1a1f2e 100%);
-        border-right: 1px solid #2d3748;
+    /* Main content area */
+    .main .block-container {
+        background: transparent !important;
     }
     
-    /* Headers */
-    h1, h2, h3 {
+    /* Sidebar styling - force override */
+    section[data-testid="stSidebar"], [data-testid="stSidebar"] > div {
+        background: linear-gradient(180deg, #0f1419 0%, #1a1f2e 100%) !important;
+        border-right: 1px solid #2d3748 !important;
+    }
+    
+    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] {
+        color: #e0e0e0 !important;
+    }
+    
+    /* Headers - force all header elements */
+    h1, h2, h3, h4, h5, h6,
+    .stMarkdown h1, .stMarkdown h2, .stMarkdown h3,
+    [data-testid="stMarkdownContainer"] h1,
+    [data-testid="stMarkdownContainer"] h2,
+    [data-testid="stMarkdownContainer"] h3 {
         color: #00d4ff !important;
-        font-family: 'Courier New', monospace;
-        font-weight: 700;
-        letter-spacing: 1px;
+        font-family: 'Courier New', monospace !important;
+        font-weight: 700 !important;
+        letter-spacing: 1px !important;
+    }
+    
+    /* All text elements */
+    p, span, div, label {
+        color: #e0e0e0;
     }
     
     /* Metrics */
