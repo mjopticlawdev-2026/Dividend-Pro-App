@@ -5,7 +5,51 @@ import numpy as np
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 from plotly.subplots import make_subplots
-from nav_fetcher import fetch_nav_history, get_nav_on_date
+
+# NAV Fetcher functions (inline to avoid import issues on Streamlit Cloud)
+def fetch_nav_history(ticker, start_date, end_date):
+    """Fetch historical NAV data for CEF tickers"""
+    CEF_NAV_TICKERS = ['CLM', 'CRF', 'UTF', 'UTG']
+    ticker_upper = ticker.upper()
+    
+    if ticker_upper in CEF_NAV_TICKERS:
+        return fetch_cef_nav(ticker_upper, start_date, end_date)
+    return None
+
+def fetch_cef_nav(ticker, start_date, end_date):
+    """Estimate NAV from market price using typical discounts"""
+    TYPICAL_DISCOUNTS = {
+        'CLM': -0.05, 'CRF': -0.08, 'UTF': -0.10, 'UTG': -0.12
+    }
+    
+    try:
+        stock = yf.Ticker(ticker)
+        hist = stock.history(start=start_date, end=end_date)
+        if hist.empty:
+            return None
+        
+        discount = TYPICAL_DISCOUNTS.get(ticker, -0.05)
+        nav_series = hist['Close'] / (1 + discount)
+        
+        return pd.DataFrame({'Date': nav_series.index, 'NAV': nav_series.values})
+    except Exception as e:
+        return None
+
+def get_nav_on_date(nav_df, date):
+    """Get NAV value on a specific date"""
+    if nav_df is None or nav_df.empty:
+        return None
+    
+    target_date = pd.Timestamp(date)
+    if nav_df['Date'].dt.tz is not None:
+        if target_date.tz is None:
+            target_date = target_date.tz_localize('UTC').tz_convert(nav_df['Date'].dt.tz)
+    
+    nav_df = nav_df.copy()
+    nav_df['DateDiff'] = abs(nav_df['Date'] - target_date)
+    closest_idx = nav_df['DateDiff'].idxmin()
+    
+    return nav_df.loc[closest_idx, 'NAV']
 
 # Dark theme configuration
 st.set_page_config(
