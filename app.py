@@ -187,6 +187,15 @@ if st.session_state.ticker_list:
         if start_date >= end_date:
             st.error("⚠️ Start date must be before end date")
         else:
+            # Validate all tickers have config
+            for ticker in st.session_state.ticker_list:
+                if ticker not in st.session_state.drip_config:
+                    st.session_state.drip_config[ticker] = {
+                        'mode': 'Traditional DRIP',
+                        'drip_discount': 0.0,
+                        'nav_discount_pct': 0.0
+                    }
+            
             with st.spinner("⚡ Fetching market data and computing returns..."):
                 results = {}
                 errors = []
@@ -196,9 +205,10 @@ if st.session_state.ticker_list:
                 total_tickers = len(st.session_state.ticker_list)
                 
                 for idx, ticker in enumerate(st.session_state.ticker_list):
+                    # Update progress
+                    progress_bar.progress((idx + 1) / total_tickers)
+                    
                     try:
-                        # Update progress
-                        progress_bar.progress((idx + 1) / total_tickers)
                         
                         # Fetch data
                         stock = yf.Ticker(ticker)
@@ -222,9 +232,14 @@ if st.session_state.ticker_list:
                             continue
                         
                         # Calculate returns
-                        drip_mode = st.session_state.drip_config[ticker]['mode']
-                        drip_discount = st.session_state.drip_config[ticker].get('drip_discount', 0.0) / 100.0
-                        nav_discount_pct = st.session_state.drip_config[ticker].get('nav_discount_pct', 0.0) / 100.0
+                        config = st.session_state.drip_config.get(ticker, {})
+                        drip_mode = config.get('mode', 'Traditional DRIP')
+                        drip_discount = config.get('drip_discount', 0.0) / 100.0
+                        nav_discount_pct = config.get('nav_discount_pct', 0.0) / 100.0
+                        
+                        # Validate mode for non-CEF tickers
+                        if drip_mode == "DRIP at NAV (CEF)" and ticker not in ['CLM', 'CRF', 'UTF', 'UTG']:
+                            drip_mode = "Traditional DRIP"  # Fallback for invalid mode
                         
                         # Fetch NAV data if using CEF NAV mode
                         nav_df = None
@@ -299,16 +314,21 @@ if st.session_state.ticker_list:
                         error_msg = str(e)
                         if "No data found" in error_msg or "404" in error_msg:
                             errors.append(f"{ticker}: Invalid symbol or no data available")
+                        elif "KeyError" in str(type(e)):
+                            errors.append(f"{ticker}: Configuration error - try removing and re-adding")
                         else:
-                            errors.append(f"{ticker}: {error_msg[:100]}")
+                            errors.append(f"{ticker}: {error_msg[:150]}")
+                        # Continue to next ticker instead of crashing
+                        continue
                 
                 progress_bar.empty()
                 
                 # Display errors
                 if errors:
-                    st.warning("⚠️ Some tickers encountered errors:")
-                    for error in errors:
-                        st.write(f"• {error}")
+                    with st.expander("⚠️ Errors Encountered", expanded=True):
+                        st.warning(f"{len(errors)} ticker(s) had issues:")
+                        for error in errors:
+                            st.write(f"• {error}")
                 
                 # Display results
                 if results:
