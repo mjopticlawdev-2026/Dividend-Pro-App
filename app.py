@@ -13,64 +13,13 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for dark, technical theme
+# Custom CSS for readable dark theme
 st.markdown("""
 <style>
-    /* Main background - force override */
-    .stApp, [data-testid="stAppViewContainer"], [data-testid="stApp"] {
-        background: linear-gradient(135deg, #0a0e27 0%, #1a1d35 100%) !important;
-    }
-    
-    /* Main content area */
-    .main .block-container {
-        background: transparent !important;
-    }
-    
-    /* Sidebar styling - force override */
-    section[data-testid="stSidebar"], [data-testid="stSidebar"] > div {
-        background: linear-gradient(180deg, #0f1419 0%, #1a1f2e 100%) !important;
-        border-right: 1px solid #2d3748 !important;
-    }
-    
-    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] {
-        color: #e0e0e0 !important;
-    }
-    
-    /* Headers - force all header elements */
-    h1, h2, h3, h4, h5, h6,
-    .stMarkdown h1, .stMarkdown h2, .stMarkdown h3,
-    [data-testid="stMarkdownContainer"] h1,
-    [data-testid="stMarkdownContainer"] h2,
-    [data-testid="stMarkdownContainer"] h3 {
+    /* Headers */
+    h1, h2, h3 {
         color: #00d4ff !important;
         font-family: 'Courier New', monospace !important;
-        font-weight: 700 !important;
-        letter-spacing: 1px !important;
-    }
-    
-    /* All text elements */
-    p, span, div, label {
-        color: #e0e0e0;
-    }
-    
-    /* Metrics */
-    [data-testid="stMetricValue"] {
-        color: #00ff88;
-        font-family: 'Courier New', monospace;
-        font-size: 28px;
-    }
-    
-    [data-testid="stMetricDelta"] {
-        font-family: 'Courier New', monospace;
-    }
-    
-    /* Input fields */
-    .stTextInput input, .stNumberInput input, .stDateInput input {
-        background-color: #1a1f2e !important;
-        color: #e0e0e0 !important;
-        border: 1px solid #2d3748 !important;
-        border-radius: 4px;
-        font-family: 'Courier New', monospace;
     }
     
     /* Buttons */
@@ -79,45 +28,10 @@ st.markdown("""
         color: #000;
         font-weight: bold;
         font-family: 'Courier New', monospace;
-        border: none;
-        padding: 12px 24px;
-        border-radius: 6px;
-        letter-spacing: 1px;
     }
     
     .stButton button:hover {
         background: linear-gradient(90deg, #00ffcc 0%, #00d4ff 100%);
-        box-shadow: 0 0 20px rgba(0, 212, 255, 0.5);
-    }
-    
-    /* Dataframe */
-    .stDataFrame {
-        background-color: #1a1f2e;
-    }
-    
-    /* Success/Info boxes */
-    .stSuccess, .stInfo {
-        background-color: rgba(0, 212, 255, 0.1);
-        border-left: 4px solid #00d4ff;
-        color: #e0e0e0;
-    }
-    
-    /* Warning boxes */
-    .stWarning {
-        background-color: rgba(255, 165, 0, 0.1);
-        border-left: 4px solid #ffa500;
-        color: #e0e0e0;
-    }
-    
-    /* Radio buttons */
-    .stRadio label {
-        color: #e0e0e0 !important;
-        font-family: 'Courier New', monospace;
-    }
-    
-    /* Slider */
-    .stSlider {
-        color: #00d4ff;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -148,17 +62,21 @@ with st.sidebar:
             label_visibility="collapsed"
         ).strip().upper()
     with col2:
-        if st.button("➕ ADD", key="add_ticker"):
-            if new_ticker and new_ticker not in st.session_state.ticker_list:
-                if len(st.session_state.ticker_list) < 10:
+        if st.button("➕", key="add_ticker"):
+            if new_ticker:
+                if new_ticker in st.session_state.ticker_list:
+                    st.warning(f"⚠️ {new_ticker} already added")
+                elif len(st.session_state.ticker_list) >= 10:
+                    st.warning("⚠️ Maximum 10 tickers")
+                elif len(new_ticker) > 6 or not new_ticker.isalpha():
+                    st.warning("⚠️ Invalid ticker symbol")
+                else:
                     st.session_state.ticker_list.append(new_ticker)
                     st.session_state.drip_config[new_ticker] = {
                         'mode': 'Traditional DRIP',
                         'nav_discount': 5.0
                     }
                     st.rerun()
-                else:
-                    st.warning("⚠️ Maximum 10 tickers")
     
     # Display current tickers with remove buttons
     if st.session_state.ticker_list:
@@ -324,7 +242,11 @@ if st.session_state.ticker_list:
                         }
                         
                     except Exception as e:
-                        errors.append(f"{ticker}: {str(e)}")
+                        error_msg = str(e)
+                        if "No data found" in error_msg or "404" in error_msg:
+                            errors.append(f"{ticker}: Invalid symbol or no data available")
+                        else:
+                            errors.append(f"{ticker}: {error_msg[:100]}")
                 
                 progress_bar.empty()
                 
