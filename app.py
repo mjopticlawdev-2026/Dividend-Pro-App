@@ -92,7 +92,21 @@ if st.sidebar.button("🚀 Calculate Total Return", type="primary"):
                     # Fetch historical data
                     stock = yf.Ticker(ticker)
                     hist = stock.history(start=start_date, end=end_date)
-                    divs = stock.dividends[start_date:end_date]
+                    
+                    # Get all dividends and filter by date (handle timezone issues)
+                    all_divs = stock.dividends
+                    if not all_divs.empty and len(all_divs) > 0:
+                        # Make timezone-aware timestamps if the index is timezone-aware
+                        if all_divs.index.tz is not None:
+                            # Localize to UTC then convert to the index timezone
+                            start_ts = pd.Timestamp(start_date).tz_localize('UTC').tz_convert(all_divs.index.tz)
+                            end_ts = pd.Timestamp(end_date).tz_localize('UTC').tz_convert(all_divs.index.tz)
+                        else:
+                            start_ts = pd.Timestamp(start_date)
+                            end_ts = pd.Timestamp(end_date)
+                        divs = all_divs[(all_divs.index >= start_ts) & (all_divs.index <= end_ts)]
+                    else:
+                        divs = pd.Series([], dtype=float)
                     
                     if hist.empty:
                         errors.append(f"{ticker}: No price data found")
