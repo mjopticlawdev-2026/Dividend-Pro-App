@@ -5,6 +5,7 @@ import numpy as np
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 from plotly.subplots import make_subplots
+from nav_fetcher import fetch_nav_history, get_nav_on_date
 
 # Dark theme configuration
 st.set_page_config(
@@ -72,9 +73,12 @@ with st.sidebar:
                     st.warning("⚠️ Invalid ticker symbol")
                 else:
                     st.session_state.ticker_list.append(new_ticker)
+                    # CLM and CRF default to "DRIP at NAV", others to "Traditional DRIP"
+                    default_mode = 'DRIP at NAV (CEF)' if new_ticker in ['CLM', 'CRF'] else 'Traditional DRIP'
                     st.session_state.drip_config[new_ticker] = {
-                        'mode': 'Traditional DRIP',
-                        'nav_discount': 5.0
+                        'mode': default_mode,
+                        'drip_discount': 0.0,  # % discount for non-NAV DRIP
+                        'nav_discount_pct': 0.0  # % discount from NAV for CLM/CRF
                     }
                     st.rerun()
     
@@ -129,26 +133,52 @@ with st.sidebar:
         
         for ticker in st.session_state.ticker_list:
             with st.expander(f"⚙️ {ticker}", expanded=False):
+                # Determine available DRIP modes based on ticker
+                is_cef_nav = ticker in ['CLM', 'CRF', 'UTF', 'UTG']
+                
+                if is_cef_nav:
+                    mode_options = ["No DRIP", "Traditional DRIP", "DRIP with Discount", "DRIP at NAV (CEF)"]
+                else:
+                    mode_options = ["No DRIP", "Traditional DRIP", "DRIP with Discount"]
+                
+                current_mode = st.session_state.drip_config[ticker]['mode']
+                if current_mode not in mode_options:
+                    current_mode = mode_options[1]  # Default to Traditional DRIP
+                
                 mode = st.radio(
                     "DRIP Mode",
-                    options=["No DRIP", "Traditional DRIP", "DRIP at NAV"],
+                    options=mode_options,
                     key=f"mode_{ticker}",
-                    index=["No DRIP", "Traditional DRIP", "DRIP at NAV"].index(
-                        st.session_state.drip_config[ticker]['mode']
-                    )
+                    index=mode_options.index(current_mode)
                 )
                 st.session_state.drip_config[ticker]['mode'] = mode
                 
-                if mode == "DRIP at NAV":
-                    discount = st.slider(
-                        "NAV Discount (%)",
+                # DRIP Discount (for non-CEF or non-NAV mode)
+                if mode == "DRIP with Discount":
+                    drip_discount = st.slider(
+                        "DRIP Discount (%)",
                         min_value=0.0,
-                        max_value=20.0,
-                        value=st.session_state.drip_config[ticker]['nav_discount'],
+                        max_value=10.0,
+                        value=st.session_state.drip_config[ticker].get('drip_discount', 0.0),
                         step=0.5,
-                        key=f"discount_{ticker}"
+                        key=f"drip_discount_{ticker}",
+                        help="Discount from market price for reinvestment (e.g., broker DRIP discount)"
                     )
-                    st.session_state.drip_config[ticker]['nav_discount'] = discount
+                    st.session_state.drip_config[ticker]['drip_discount'] = drip_discount
+                
+                # NAV Discount (for CEF DRIP at NAV mode)
+                if mode == "DRIP at NAV (CEF)":
+                    st.info(f"📊 {ticker} will reinvest at actual NAV (fetched from historical data)")
+                    nav_discount = st.slider(
+                        "Discount from NAV (%)",
+                        min_value=0.0,
+                        max_value=10.0,
+                        value=st.session_state.drip_config[ticker].get('nav_discount_pct', 0.0),
+                        step=0.5,
+                        key=f"nav_discount_{ticker}",
+                        help="Additional discount from NAV (if applicable)"
+                    )
+                    st.session_state.drip_config[ticker]['nav_discount_pct'] = nav_discount
 
 # Main content area
 if st.session_state.ticker_list:
@@ -193,7 +223,13 @@ if st.session_state.ticker_list:
                         
                         # Calculate returns
                         drip_mode = st.session_state.drip_config[ticker]['mode']
-                        nav_discount = st.session_state.drip_config[ticker]['nav_discount'] / 100.0
+                        drip_discount = st.session_state.drip_config[ticker].get('drip_discount', 0.0) / 100.0
+                        nav_discount_pct = st.session_state.drip_config[ticker].get('nav_discount_pct', 0.0) / 100.0
+                        
+                        # Fetch NAV data if using CEF NAV mode
+                        nav_df = None
+                        if drip_mode == "DRIP at NAV (CEF)":
+                            nav_df = fetch_nav_history(ticker, start_date, end_date)
                         
                         initial_price = hist['Close'].iloc[0]
                         shares = initial_investment / initial_price
@@ -215,13 +251,29 @@ if st.session_state.ticker_list:
                                 
                                 if drip_mode == "No DRIP":
                                     cash += dividend_amount
+                                    
                                 elif drip_mode == "Traditional DRIP":
                                     new_shares = dividend_amount / current_price
                                     shares += new_shares
-                                elif drip_mode == "DRIP at NAV":
-                                    nav_price = current_price * (1 - nav_discount)
-                                    new_shares = dividend_amount / nav_price
+                                    
+                                elif drip_mode == "DRIP with Discount":
+                                    # Reinvest at market price minus discount
+                                    discounted_price = current_price * (1 - drip_discount)
+                                    new_shares = dividend_amount / discounted_price
                                     shares += new_shares
+                                    
+                                elif drip_mode == "DRIP at NAV (CEF)":
+                                    # Reinvest at actual NAV (or estimated NAV)
+                                    nav_value = get_nav_on_date(nav_df, date)
+                                    if nav_value is not None:
+                                        # Apply additional discount from NAV if specified
+                                        reinvest_price = nav_value * (1 - nav_discount_pct)
+                                        new_shares = dividend_amount / reinvest_price
+                                        shares += new_shares
+                                    else:
+                                        # Fallback to market price if NAV not available
+                                        new_shares = dividend_amount / current_price
+                                        shares += new_shares
                             
                             position_value = (shares * current_price) + cash
                             position_values.append(position_value)
@@ -238,7 +290,9 @@ if st.session_state.ticker_list:
                             "final_shares": shares,
                             "final_cash": cash,
                             "drip_mode": drip_mode,
-                            "nav_discount": nav_discount * 100
+                            "drip_discount": drip_discount * 100,
+                            "nav_discount_pct": nav_discount_pct * 100,
+                            "used_nav": nav_df is not None
                         }
                         
                     except Exception as e:
@@ -374,10 +428,20 @@ if st.session_state.ticker_list:
                     
                     breakdown_data = []
                     for ticker, data in results.items():
+                        # Determine discount display
+                        discount_display = "N/A"
+                        if data['drip_mode'] == "DRIP with Discount":
+                            discount_display = f"{data['drip_discount']:.1f}%"
+                        elif data['drip_mode'] == "DRIP at NAV (CEF)":
+                            if data['nav_discount_pct'] > 0:
+                                discount_display = f"{data['nav_discount_pct']:.1f}% from NAV"
+                            else:
+                                discount_display = "At NAV" + (" ✓" if data['used_nav'] else " (est)")
+                        
                         breakdown_data.append({
                             "Ticker": ticker,
                             "DRIP Mode": data['drip_mode'],
-                            "NAV Discount": f"{data['nav_discount']:.1f}%" if data['drip_mode'] == "DRIP at NAV" else "N/A",
+                            "Discount": discount_display,
                             "Final Shares": f"{data['final_shares']:.4f}",
                             "Cash Balance": f"${data['final_cash']:.2f}",
                             "Final Value": f"${data['final_value']:,.2f}",
@@ -411,13 +475,18 @@ else:
     <div style='background: rgba(0, 212, 255, 0.05); padding: 20px; border-radius: 8px; border-left: 4px solid #00d4ff;'>
         <p style='color: #e0e0e0; line-height: 1.8;'>
         <b style='color: #00ff88;'>No DRIP:</b> Dividends accumulate as cash. Share count remains constant.<br><br>
+        
         <b style='color: #00ff88;'>Traditional DRIP:</b> Dividends reinvested at market price on ex-date.<br>
         <code style='background: rgba(0,0,0,0.3); padding: 4px 8px; border-radius: 4px;'>New Shares = Dividend Amount / Market Price</code><br><br>
-        <b style='color: #00ff88;'>DRIP at NAV:</b> Dividends reinvested at discounted price (compounding advantage).<br>
-        <code style='background: rgba(0,0,0,0.3); padding: 4px 8px; border-radius: 4px;'>New Shares = Dividend Amount / (Market Price × (1 - Discount))</code>
+        
+        <b style='color: #00ff88;'>DRIP with Discount:</b> Reinvest at market price minus broker discount (e.g., 2-5%).<br>
+        <code style='background: rgba(0,0,0,0.3); padding: 4px 8px; border-radius: 4px;'>New Shares = Dividend / (Market Price × (1 - Discount%))</code><br><br>
+        
+        <b style='color: #00ff88;'>DRIP at NAV (CEF):</b> For CLM/CRF/CEFs - reinvest at actual Net Asset Value.<br>
+        <code style='background: rgba(0,0,0,0.3); padding: 4px 8px; border-radius: 4px;'>New Shares = Dividend / NAV (fetched from historical data)</code>
         </p>
         <p style='color: #ffa500; margin-top: 15px;'>
-        ⚡ <b>KEY INSIGHT:</b> A 5% NAV discount buys ~5.26% more shares per reinvestment, creating exponential compounding over decades.
+        ⚡ <b>CEF ADVANTAGE:</b> CLM/CRF often trade at discounts to NAV. DRIP at NAV means you reinvest at the "true" value, not the discounted market price, acquiring more economic value per dollar.
         </p>
     </div>
     """, unsafe_allow_html=True)
