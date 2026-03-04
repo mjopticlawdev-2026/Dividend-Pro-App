@@ -56,30 +56,46 @@ with st.sidebar:
     
     col1, col2 = st.columns([3, 1])
     with col1:
-        new_ticker = st.text_input(
-            "Add Ticker",
-            placeholder="Enter symbol (e.g., AAPL)",
+        new_ticker_input = st.text_input(
+            "Add Ticker(s)",
+            placeholder="AAPL, MSFT, KO (comma-separated)",
             key="ticker_input",
             label_visibility="collapsed"
         ).strip().upper()
     with col2:
         if st.button("➕", key="add_ticker"):
-            if new_ticker:
-                if new_ticker in st.session_state.ticker_list:
-                    st.warning(f"⚠️ {new_ticker} already added")
-                elif len(st.session_state.ticker_list) >= 10:
-                    st.warning("⚠️ Maximum 10 tickers")
-                elif len(new_ticker) > 6 or not new_ticker.isalpha():
-                    st.warning("⚠️ Invalid ticker symbol")
-                else:
-                    st.session_state.ticker_list.append(new_ticker)
-                    # CLM and CRF default to "DRIP at NAV", others to "Traditional DRIP"
-                    default_mode = 'DRIP at NAV (CEF)' if new_ticker in ['CLM', 'CRF'] else 'Traditional DRIP'
-                    st.session_state.drip_config[new_ticker] = {
-                        'mode': default_mode,
-                        'drip_discount': 0.0,  # % discount for non-NAV DRIP
-                        'nav_discount_pct': 0.0  # % discount from NAV for CLM/CRF
-                    }
+            if new_ticker_input:
+                # Parse comma-separated tickers
+                new_tickers = [t.strip() for t in new_ticker_input.split(',') if t.strip()]
+                
+                added = []
+                skipped = []
+                
+                for ticker in new_tickers:
+                    if ticker in st.session_state.ticker_list:
+                        skipped.append(f"{ticker} (already added)")
+                    elif len(st.session_state.ticker_list) >= 10:
+                        skipped.append(f"{ticker} (max 10 reached)")
+                        break
+                    elif len(ticker) > 6 or not ticker.isalpha():
+                        skipped.append(f"{ticker} (invalid format)")
+                    else:
+                        st.session_state.ticker_list.append(ticker)
+                        # CLM and CRF default to "DRIP at NAV", others to "Traditional DRIP"
+                        default_mode = 'DRIP at NAV (CEF)' if ticker in ['CLM', 'CRF'] else 'Traditional DRIP'
+                        st.session_state.drip_config[ticker] = {
+                            'mode': default_mode,
+                            'drip_discount': 0.0,
+                            'nav_discount_pct': 0.0
+                        }
+                        added.append(ticker)
+                
+                if added:
+                    st.success(f"✅ Added: {', '.join(added)}")
+                if skipped:
+                    st.warning(f"⚠️ Skipped: {', '.join(skipped)}")
+                
+                if added:  # Only rerun if something was actually added
                     st.rerun()
     
     # Display current tickers with remove buttons
